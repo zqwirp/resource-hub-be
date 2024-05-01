@@ -2,28 +2,26 @@ package logger
 
 import (
 	"io"
+	"log"
 	"log/slog"
 	"os"
 )
 
-type Logger struct {
-	*slog.Logger
-	*os.File
+func NewSlog(writer *io.WriteCloser) *slog.Logger {
+	if writer == nil {
+		writer = os.Stdout // Default to standard output if no writer is provided
+	} else {
+		writer = io.MultiWriter(os.Stdout, writer)
+	}
+
+	// Initialize a new text handler with the writer.
+	// Adjust the second argument to NewTextHandler if it requires specific configuration or error handling.
+	h := slog.NewTextHandler(*writer, nil)
+	l := slog.New(h)
+	return l
 }
 
-func New(path, name string) (*Logger, error) {
-	err := os.MkdirAll("./"+path, 0755)
-	if err != nil {
-		return nil, err
-	}
-
-	file, err := os.OpenFile(path+"/"+name+".log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return nil, err
-	}
-
-	h := slog.NewTextHandler(io.MultiWriter(os.Stdout, file), nil)
-
-	l := slog.New(h)
-	return &Logger{Logger: l, File: file}, nil
+func NewLog(file *os.File) *log.Logger {
+	l := log.New(file, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
+	return l
 }

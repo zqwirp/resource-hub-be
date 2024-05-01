@@ -7,8 +7,8 @@ type Config struct {
 
 	Env string
 
-	LogPath string
-	LogFile string
+	LogPath     string
+	LogFileName string
 
 	HTTPPort string
 
@@ -37,9 +37,9 @@ func NewConfig() *Config {
 		logPath = "./"
 	}
 
-	logFile := os.Getenv("LOG_PATH")
-	if logFile == "" {
-		logFile = "logs"
+	logFileName := os.Getenv("LOG_PATH")
+	if logFileName == "" {
+		logFileName = "logs"
 	}
 
 	dbSslMode := os.Getenv("DB_SSLMODE")
@@ -52,10 +52,18 @@ func NewConfig() *Config {
 
 		Env: env,
 
-		LogPath: logPath,
-		LogFile: logFile,
+		LogPath:     logPath,
+		LogFileName: logFileName,
 
 		HTTPPort: os.Getenv("HTTP_PORT"),
+
+		DBConnection: os.Getenv("DB_CONNECTION"),
+		DBUser:       os.Getenv("DB_USER"),
+		DBPassword:   os.Getenv("DB_PASSWORD"),
+		DBHost:       os.Getenv("DB_HOST"),
+		DBPort:       os.Getenv("DB_PORT"),
+		DBName:       os.Getenv("DB_NAME"),
+		DBSSLMode:    dbSslMode,
 	}
 
 	return &c

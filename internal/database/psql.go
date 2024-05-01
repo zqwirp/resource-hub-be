@@ -2,29 +2,18 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
-	"reshub/pkg/database"
 
 	"github.com/jackc/pgx/v5"
 )
 
-type DBConnector interface {
-	GetDB() *sql.DB
+type PSQLConnector interface {
+	GetDB() *pgx.Conn
 }
 
-type SQL struct {
-	db *sql.DB
-}
-
-func NewDatabase() DBConnector {
-	db, _ := database.OpenSQL("postgres", "onta")
-	return &SQL{db: db}
-}
-
-func (db *SQL) GetDB() *sql.DB {
-	return nil
+type PSQL struct {
+	db *pgx.Conn
 }
 
 func Something() {

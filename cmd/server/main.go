@@ -4,56 +4,63 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
+	"log/syslog"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
 	"reshub/config"
 	"reshub/internal/handler"
-	"reshub/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	// Setup config
 	cfg := config.NewConfig()
 
-	// Set logger
-	logPath := cfg.LogPath
-	logFile := cfg.LogFile
-	logLogger, err := logger.New(logPath, logFile)
-	if err != nil {
-		panic(err)
-	}
-	defer logLogger.File.Close() // Close file at program exit
+	logWriter := setupLogger(cfg)
+	defer logWriter.Close()
 
-	// Setup gin logLogger
-	ginLogger, err := ginLogLogger(logPath, "http")
-	if err != nil {
-		panic(err)
-	}
-	defer ginLogger.Close()
+	// logger.NewSlog(logFile)
 
 	// Set handler
 	pingHandler := handler.NewPingHandler()
 
-	// Set router
+	ginLogger := ginSetupLogger(cfg)
+	defer ginLogger.Close()
+
 	router := gin.Default()
-	// Set routes
 	router.GET("/ping", pingHandler.Ping)
 	router.POST("/pong", pingHandler.Pong)
 
-	// Set HTTP port number
-	httpPort := cfg.HTTPPort
-	if httpPort == "" {
-		msg := "failed to get http port environment variable"
-		logLogger.Error(msg)
-		panic(msg)
+	// Setup and run server
+	startServer(cfg, router)
+}
+
+func ginSetupLogger(cfg *config.Config) *os.File {
+	logFilePath := fmt.Sprintf("%s/http.log", cfg.LogPath)
+
+	gin.DisableConsoleColor()
+	file, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("failed to open log file: %v", err)
 	}
-	logLogger.Info(fmt.Sprintf("starting server on port: %s", cfg.HTTPPort))
+
+	gin.DefaultWriter = io.MultiWriter(file)
+	return file
+}
+
+func startServer(cfg *config.Config, router *gin.Engine) {
+	if cfg.HTTPPort == "" {
+		log.Fatal("HTTP port not specified in the configuration")
+	}
+
+	// Log server start
+	log.Printf("Starting server on port: %s\n", cfg.HTTPPort)
 
 	// Setup and run server
 	srv := &http.Server{
@@ -63,41 +70,59 @@ func main() {
 	go func() {
 		// Service connections
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logLogger.Error(err.Error())
+			log.Fatalf("Failed to listen and serve: %v", err)
 		}
 	}()
 
-	// Shutdown program in a gracefully way...
-	gracefullyShutDownServer(srv, logLogger)
-}
-
-func ginLogLogger(path, name string) (*os.File, error) {
-	gin.DisableConsoleColor()
-	file, err := os.OpenFile("./"+path+"/"+name+".log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return nil, err
-	}
-
-	gin.DefaultWriter = io.MultiWriter(file)
-	return file, nil
-}
-
-func gracefullyShutDownServer(srv *http.Server, l *logger.Logger) {
-	// Wait for interrupt signal to gracefully shutdown the server with a timeout of 5 seconds.
+	// Setup graceful shutdown
 	quit := make(chan os.Signal, 1)
-
-	// kill (no param) default send syscanll.SIGTERM, -2 is syscall.SIGINT,
-	// -9 is syscall. SIGKILL but can"t be catch, so don't need add it
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	l.Info("shutdown server ...")
+	log.Println("Shutting down server...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		l.Info("server shutdown:", err)
+		log.Printf("Server shutdown error: %v", err)
 	}
 
 	<-ctx.Done()
-	l.Info("server exiting")
+	log.Println("Server exited gracefully")
 }
+
+func setupLogger(cfg *config.Config) io.WriteCloser {
+	if runtime.GOOS == "linux" {
+		sysLogger, err := syslog.New(syslog.LOG_INFO|syslog.LOG_LOCAL0, "Resource Hub")
+		if err != nil {
+			log.Fatalf("failed to set up syslog: %v", err)
+		}
+		log.SetOutput(sysLogger)
+		return sysLogger
+	} else {
+		err := os.MkdirAll(cfg.LogPath, 0755)
+		if err != nil {
+			log.Fatalf("failed to create log directory: %v", err)
+		}
+
+		logFilePath := fmt.Sprintf("%s/%s.log", cfg.LogPath, cfg.LogFileName)
+		logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			log.Fatalf("failed to open log file: %v", err)
+		}
+		return logFile
+	}
+}
+
+// func setupLogger(cfg *config.Config) *os.File {
+// 	err := os.MkdirAll(cfg.LogPath, 0755)
+// 	if err != nil {
+// 		log.Fatalf("failed to create log directory: %v", err)
+// 	}
+
+// 	logFilePath := fmt.Sprintf("%s/%s.log", cfg.LogPath, cfg.LogFileName)
+// 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+// 	if err != nil {
+// 		log.Fatalf("failed to open log file: %v", err)
+// 	}
+// 	return logFile
+// }
