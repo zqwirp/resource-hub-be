@@ -10,6 +10,7 @@ type Config struct {
 	LogPath     string
 	LogFileName string
 
+	HTTPHost string
 	HTTPPort string
 
 	DBConnection string
@@ -47,6 +48,11 @@ func NewConfig() *Config {
 		dbSslMode = "disable"
 	}
 
+	httpHost := os.Getenv("HTTPHost")
+	if httpHost == "" {
+		httpHost = "127.0.0.1"
+	}
+
 	c := Config{
 		AppName: appName,
 
@@ -55,6 +61,7 @@ func NewConfig() *Config {
 		LogPath:     logPath,
 		LogFileName: logFileName,
 
+		HTTPHost: httpHost,
 		HTTPPort: os.Getenv("HTTP_PORT"),
 
 		DBConnection: os.Getenv("DB_CONNECTION"),

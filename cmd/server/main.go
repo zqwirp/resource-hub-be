@@ -14,44 +14,52 @@ import (
 	"time"
 
 	"reshub/config"
+	"reshub/internal/database"
 	"reshub/internal/handler"
+	"reshub/pkg/logger"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	// Init config(environment variables)
 	cfg := config.NewConfig()
 
+	// Init log
 	logWriter := setupLogger(cfg)
 	defer logWriter.Close()
+	if cfg.Env == "production" {
+		gin.DefaultWriter = io.MultiWriter(logWriter)
+	}
+	logger.NewSlog(logWriter)
 
-	// logger.NewSlog(logFile)
+	// Init db
+	var d database.Closer
+	switch cfg.DBConnection {
+	case "postgresql":
+	case "postgres":
+	case "psql":
+		d = database.NewPSQL(cfg)
+	case "mysql":
+	case "mariadb":
+		d = database.NewSQL(cfg)
+	default:
+		log.Fatal("failed to retrive db connections")
+	}
+	defer d.Close()
 
 	// Set handler
 	pingHandler := handler.NewPingHandler()
 
-	ginLogger := ginSetupLogger(cfg)
-	defer ginLogger.Close()
-
 	router := gin.Default()
-	router.GET("/ping", pingHandler.Ping)
-	router.POST("/pong", pingHandler.Pong)
+
+	router.Static("/static", "./static")
+
+	router.GET("/api/ping", pingHandler.Ping)
+	router.POST("/api/pong", pingHandler.Pong)
 
 	// Setup and run server
 	startServer(cfg, router)
-}
-
-func ginSetupLogger(cfg *config.Config) *os.File {
-	logFilePath := fmt.Sprintf("%s/http.log", cfg.LogPath)
-
-	gin.DisableConsoleColor()
-	file, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("failed to open log file: %v", err)
-	}
-
-	gin.DefaultWriter = io.MultiWriter(file)
-	return file
 }
 
 func startServer(cfg *config.Config, router *gin.Engine) {
@@ -59,18 +67,17 @@ func startServer(cfg *config.Config, router *gin.Engine) {
 		log.Fatal("HTTP port not specified in the configuration")
 	}
 
-	// Log server start
-	log.Printf("Starting server on port: %s\n", cfg.HTTPPort)
-
 	// Setup and run server
+	serverAddr := fmt.Sprintf("%s:%s", cfg.HTTPHost, cfg.HTTPPort)
+	log.Printf("starting server on server address: %s\n", serverAddr)
 	srv := &http.Server{
-		Addr:    "127.0.0.1:" + cfg.HTTPPort,
+		Addr:    serverAddr,
 		Handler: router,
 	}
 	go func() {
 		// Service connections
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to listen and serve: %v", err)
+			log.Fatalf("failed to listen and serve: %v", err)
 		}
 	}()
 
@@ -91,7 +98,7 @@ func startServer(cfg *config.Config, router *gin.Engine) {
 }
 
 func setupLogger(cfg *config.Config) io.WriteCloser {
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == "linux" && cfg.Env == "production" {
 		sysLogger, err := syslog.New(syslog.LOG_INFO|syslog.LOG_LOCAL0, "Resource Hub")
 		if err != nil {
 			log.Fatalf("failed to set up syslog: %v", err)
@@ -105,24 +112,10 @@ func setupLogger(cfg *config.Config) io.WriteCloser {
 		}
 
 		logFilePath := fmt.Sprintf("%s/%s.log", cfg.LogPath, cfg.LogFileName)
-		logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		file, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			log.Fatalf("failed to open log file: %v", err)
 		}
-		return logFile
+		return file
 	}
 }
-
-// func setupLogger(cfg *config.Config) *os.File {
-// 	err := os.MkdirAll(cfg.LogPath, 0755)
-// 	if err != nil {
-// 		log.Fatalf("failed to create log directory: %v", err)
-// 	}
-
-// 	logFilePath := fmt.Sprintf("%s/%s.log", cfg.LogPath, cfg.LogFileName)
-// 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-// 	if err != nil {
-// 		log.Fatalf("failed to open log file: %v", err)
-// 	}
-// 	return logFile
-// }

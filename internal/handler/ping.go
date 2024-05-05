@@ -8,6 +8,7 @@ type PingHandler interface {
 }
 
 type Ping struct {
+	Message string
 }
 
 func NewPingHandler() PingHandler {
